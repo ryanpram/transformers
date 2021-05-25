@@ -545,10 +545,12 @@ class AsnqProcessor(DataProcessor):
             guid = "%s-%s" % (set_type, i)
             text_a = line[0]
             text_b = line[1]
-            if eval(line[-1].strip()) == 4:
+            print(line);
+            if eval(line[-1].strip()) == 1:
                 label = "1"
             else:
                 label = "0"
+            print(label);
             examples.append(
                 InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
         return examples

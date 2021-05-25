@@ -22,6 +22,7 @@ import glob
 import logging
 import os
 import random
+import time
 
 import numpy as np
 import torch
@@ -253,7 +254,11 @@ def evaluate(args, model, tokenizer, prefix=""):
             nb_eval_steps += 1
             if preds is None:
                 preds = logits.detach().cpu().numpy()
+                print('preds: ',preds)
                 out_label_ids = inputs['labels'].detach().cpu().numpy()
+                print('out_label_ids: ',out_label_ids)
+                time.sleep(60)
+                break
             else:
                 preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
                 out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
@@ -491,6 +496,7 @@ def main():
                                                 do_lower_case=args.do_lower_case,
                                                 cache_dir=args.cache_dir if args.cache_dir else None)
     if args.sequential:
+        # model = model_class.from_pretrained(args.model_name_or_path)
         model = model_class.from_pretrained(args.output_dir)
     else:
         model = model_class.from_pretrained(args.model_name_or_path,

@@ -215,7 +215,8 @@ def evaluate(args, model, tokenizer, prefix=""):
 
     results = {}
     for eval_task, eval_output_dir in zip(eval_task_names, eval_outputs_dirs):
-        eval_dataset = load_and_cache_examples(args, eval_task, tokenizer, evaluate=True)
+        
+        eval_dataset = load_and_cache_examples(args, eval_task, tokenizer, evaluate=True,test=args.do_test)
 
         if not os.path.exists(eval_output_dir) and args.local_rank in [-1, 0]:
             os.makedirs(eval_output_dir)
@@ -281,15 +282,23 @@ def evaluate(args, model, tokenizer, prefix=""):
     return results
 
 
-def load_and_cache_examples(args, task, tokenizer, evaluate=False):
+def load_and_cache_examples(args, task, tokenizer, evaluate=False, test=False):
     if args.local_rank not in [-1, 0] and not evaluate:
         torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
 
     processor = processors[task]()
     output_mode = output_modes[task]
+
+    if test:
+        dataset = 'test'
+    elif evaluate:
+        dataset = 'dev'
+    else:
+        dataset = 'train'
+
     # Load data features from cache or dataset file
     cached_features_file = os.path.join(args.data_dir, 'cached_{}_{}_{}_{}'.format(
-        'dev' if evaluate else 'train',
+        dataset,
         list(filter(None, args.model_name_or_path.split('/'))).pop(),
         str(args.max_seq_length),
         str(task)))
@@ -302,7 +311,14 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
         if task in ['mnli', 'mnli-mm'] and args.model_type in ['roberta']:
             # HACK(label indices are swapped in RoBERTa pretrained model)
             label_list[1], label_list[2] = label_list[2], label_list[1] 
-        examples = processor.get_dev_examples(args.data_dir) if evaluate else processor.get_train_examples(args.data_dir)
+        
+        if dataset == 'test':
+            examples = processor.get_test_examples(args.data_dir) 
+        elif dataset == 'dev':
+            examples = processor.get_dev_examples(args.data_dir) 
+        else:
+            examples = processor.get_train_examples(args.data_dir) 
+        # examples = processor.get_dev_examples(args.data_dir) if evaluate else processor.get_train_examples(args.data_dir)
         features = convert_examples_to_features(examples,
                                                 tokenizer,
                                                 label_list=label_list,
@@ -422,6 +438,8 @@ def main():
                         help="For distributed training: local_rank")
     parser.add_argument('--server_ip', type=str, default='', help="For distant debugging.")
     parser.add_argument('--server_port', type=str, default='', help="For distant debugging.")
+    parser.add_argument("--do_test", action='store_true',
+                        help="Whether to run eval on the test set.")
     args = parser.parse_args()
 
     if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and not args.overwrite_output_dir:

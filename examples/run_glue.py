@@ -82,7 +82,7 @@ def set_seed(args):
 def train(args, train_dataset, model, tokenizer):
     """ Train the model """
     if args.local_rank in [-1, 0]:
-        tb_writer = SummaryWriter()
+        tb_writer = SummaryWriter(args.tensorboard_log_dir_loc)
 
     args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
     train_sampler = RandomSampler(train_dataset) if args.local_rank == -1 else DistributedSampler(train_dataset)
@@ -175,9 +175,13 @@ def train(args, train_dataset, model, tokenizer):
                     if args.local_rank == -1 and args.evaluate_during_training:  # Only evaluate when single GPU otherwise metrics may not average well
                         results = evaluate(args, model, tokenizer)
                         for key, value in results.items():
-                            tb_writer.add_scalar('eval_{}'.format(key), value, global_step)
-                    tb_writer.add_scalar('lr', scheduler.get_lr()[0], global_step)
-                    tb_writer.add_scalar('loss', (tr_loss - logging_loss)/args.logging_steps, global_step)
+                            if key == 'loss':
+                                tb_writer.add_scalar('Loss/eval', value, global_step)
+                            else:
+                                tb_writer.add_scalar('eval_{}'.format(key), value, global_step)
+                                
+                    tb_writer.add_scalar('Lr/train', scheduler.get_lr()[0], global_step)
+                    tb_writer.add_scalar('Loss/train', (tr_loss - logging_loss)/args.logging_steps, global_step)
                     logging_loss = tr_loss
 
                 if args.local_rank in [-1, 0] and args.save_steps > 0 and global_step % args.save_steps == 0:
@@ -255,11 +259,7 @@ def evaluate(args, model, tokenizer, prefix=""):
             nb_eval_steps += 1
             if preds is None:
                 preds = logits.detach().cpu().numpy()
-                print('preds: ',preds)
                 out_label_ids = inputs['labels'].detach().cpu().numpy()
-                print('out_label_ids: ',out_label_ids)
-                time.sleep(60)
-                break
             else:
                 preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
                 out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
@@ -271,6 +271,9 @@ def evaluate(args, model, tokenizer, prefix=""):
             preds = np.squeeze(preds)
         result = compute_metrics(eval_task, preds, out_label_ids)
         results.update(result)
+        #add eval loss to result
+        results.update({'loss':eval_loss})
+
 
         output_eval_file = os.path.join(eval_output_dir, prefix, "eval_results.txt")
         with open(output_eval_file, "w") as writer:
@@ -296,6 +299,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False, test=False):
     else:
         dataset = 'train'
 
+    print('======== Dataset: ', dataset)
     # Load data features from cache or dataset file
     cached_features_file = os.path.join(args.data_dir, 'cached_{}_{}_{}_{}'.format(
         dataset,
@@ -440,6 +444,7 @@ def main():
     parser.add_argument('--server_port', type=str, default='', help="For distant debugging.")
     parser.add_argument("--do_test", action='store_true',
                         help="Whether to run eval on the test set.")
+    parser.add_argument('--tensorboard_log_dir_loc', type=str, default='runs/exp_1', help="For logging purpose.")
     args = parser.parse_args()
 
     if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and not args.overwrite_output_dir:
